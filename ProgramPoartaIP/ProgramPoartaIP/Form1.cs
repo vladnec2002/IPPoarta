@@ -1,8 +1,9 @@
 ﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
-using System.Data.SQLite;
 using System.IO.Ports;
+using MySql.Data.MySqlClient;
+using System.Threading.Tasks;
 
 namespace ProgramPoartaIP
 {
@@ -12,28 +13,20 @@ namespace ProgramPoartaIP
         private Timer timer;
         private bool gateClosed = true;
 
-        private string personName = "Necula Vlad";
-        private string carNumber = "AR10VLN";
-        private string direction = "Exit";
-
-        private SQLiteConnection sqlite_conn;
         private SerialPort serialPort;
 
         public Form1()
         {
             InitializeComponent();
 
+            labelAccessStatus.Location = new Point(20, 50);
+
             timer = new Timer();
             timer.Interval = 1000;
             timer.Tick += Timer_Tick;
             timer.Start();
 
-            InitializeDatabase();
-
-            // Initialize SerialPort for Arduino communication
-            serialPort = new SerialPort();
-            serialPort.PortName = "COM7"; // Change COM port accordingly
-            serialPort.BaudRate = 9600; // Match with Arduino's baud rate
+            serialPort = new SerialPort("COM8", 9600); 
             serialPort.DataReceived += SerialPort_DataReceived;
 
             try
@@ -48,9 +41,12 @@ namespace ProgramPoartaIP
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            pictureBoxGate.Image = Properties.Resources.barrierDown;
+
+            pictureBoxGateCar.Image = Properties.Resources.barrierDown;
             AlignImageToBottom();
-            HidePersonDetails();
+
+            pictureBoxGatePerson.Image = Properties.Resources.barrierDown;
+            AlignImageToBottom2();
         }
 
         private void Timer_Tick(object sender, EventArgs e)
@@ -59,174 +55,244 @@ namespace ProgramPoartaIP
             label1.Text = "Ora curentă: " + time;
         }
 
-        private void buttonToggleGate_Click(object sender, EventArgs e)
-        {
-            ToggleGate();
-        }
-
-        private void AlignImageToBottom()
-        {
-            int pictureBoxHeight = pictureBoxGate.Height;
-            int imageHeight = pictureBoxGate.Image.Height;
-
-            int newY = pictureBoxHeight - imageHeight;
-
-            pictureBoxGate.Location = new Point(pictureBoxGate.Location.X, newY);
-        }
-
-        private void PopulatePersonDetails()
-        {
-            labelPersonName.Text = "Name: " + personName;
-            labelCarNumber.Text = "Car Number: " + carNumber;
-            labelDirection.Text = "Direction: " + direction;
-
-            labelPersonName.Visible = true;
-            labelCarNumber.Visible = true;
-            labelDirection.Visible = true;
-        }
-
-        private void HidePersonDetails()
-        {
-            labelPersonName.Visible = false;
-            labelCarNumber.Visible = false;
-            labelDirection.Visible = false;
-        }
-
-        private void ToggleGate()
+        private void buttonToggleGateCar_Click(object sender, EventArgs e)
         {
             gateClosed = !gateClosed;
 
             if (gateClosed)
             {
-                CloseGate();
+                pictureBoxGateCar.Image = Properties.Resources.barrierUp;
+                AlignImageToBottom();
+
             }
             else
             {
-                OpenGate();
+                pictureBoxGateCar.Image = Properties.Resources.barrierDown;
+                AlignImageToBottom();
+
             }
 
-            AlignImageToBottom();
+        }
+
+        private void buttonToggleGatePerson_Click(object sender, EventArgs e)
+        {
+            gateClosed = !gateClosed;
+
+            if (gateClosed)
+            {
+                pictureBoxGatePerson.Image = Properties.Resources.barrierUp;
+                AlignImageToBottom2();
+
+            }
+
+            else
+            {
+                pictureBoxGatePerson.Image = Properties.Resources.barrierDown;
+                AlignImageToBottom2();
+
+            }
+        }
+
+        private void SendMessageToArduino(string message)
+        {
+            if (serialPort.IsOpen)
+            {
+                try
+                {
+                    serialPort.WriteLine(message);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Error sending data to Arduino: " + ex.Message);
+                }
+            }
+            else
+            {
+                MessageBox.Show("Serial port is not open.");
+            }
         }
 
         private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
         {
-            // This method will be called when data is received from Arduino
-            string data = serialPort.ReadLine().Trim(); // Assuming Arduino sends a line of text
-
-            // Update gate state based on received data
-            if (data == "1")
+            int number;
+            string data = serialPort.ReadLine().Trim();
+            if (int.TryParse(data, out number) && number >= 0 && number <= 1000 && number !=2)
             {
+                string gooddata = data;
                 this.Invoke((MethodInvoker)delegate
                 {
-                    OpenGate();
+                    //labelTest.Text = gooddata;
+                    OpenGateCarDatabase(gooddata);
                 });
             }
-            else if (data == "2")
+            else if (data == "Inchis")
             {
                 this.Invoke((MethodInvoker)delegate
                 {
-                    CloseGate();
+                    CloseGateCarNice();
+                    labelPersonName.Visible = false;
+                    labelCarNumber.Visible = false;
                 });
             }
         }
 
-        private void OpenGate()
+        private async void OpenGateCarDatabase(string specificUsername)
         {
-            pictureBoxGate.Image = Properties.Resources.barrierUp;
-            labelAccessStatus.Text = "Access granted! Gate is open.";
+            try
+            {
+                string connstring = "server=byrowjk8t7iswcuuyell-mysql.services.clever-cloud.com;" +
+                                    "port=3306;" +
+                                    "uid=ulthmvhrvmx0ykdw;" +
+                                    "pwd=NdJoZz8ELnBDE7N343nK;" +
+                                    "database=byrowjk8t7iswcuuyell";
+
+                using (MySqlConnection con = new MySqlConnection(connstring))
+                {
+                    con.Open();
+
+                    string sql = "SELECT Nume, NumarMasina, AccesAuto FROM Angajati WHERE ID_Angajat = @id";
+                    using (MySqlCommand cmd = new MySqlCommand(sql, con))
+                    {
+                        cmd.Parameters.AddWithValue("@id", specificUsername);
+                        using (MySqlDataReader reader = cmd.ExecuteReader())
+                        {
+                            if (reader.Read())
+                            {
+                                bool hasAccessAuto = reader.GetBoolean("AccesAuto");
+
+                                if (hasAccessAuto)
+                                {
+                                    string personName = reader["Nume"].ToString();
+                                    string carNumber = reader["NumarMasina"].ToString();
+
+                                    labelPersonName.Text = "Name: " + personName;
+                                    labelCarNumber.Text = "Car Number: " + carNumber;
+
+                                    labelPersonName.Visible = true;
+                                    labelCarNumber.Visible = true;
+
+                                    serialPort.Write("2");
+
+                                    OpenGateCar();
+
+
+                                }
+                                else
+                                {
+                                    string personName = reader["Nume"].ToString();
+
+                                    labelPersonName.Text = "Name: " + personName;
+
+                                    labelPersonName.Visible = true;
+
+                                    OpenGatePerson();
+
+                                    await Task.Delay(6000);
+
+                                    CloseGatePersonNice();
+                                    labelPersonName.Visible = false;
+                                    labelCarNumber.Visible = false;
+
+                                }
+                            }
+                            else
+                            {
+                                CloseGateCar();
+                      
+                            }
+                        }
+                    }
+                }
+            }
+            catch (MySqlException ex)
+            {
+                MessageBox.Show(ex.ToString());
+            }
+           
+        }
+
+        private void OpenGateCar()
+        {
+            labelAccessStatus.Visible = true;
+            pictureBoxGateCar.Image = Properties.Resources.barrierUp;
+            labelAccessStatus.Location = new Point(20, 50);
+            labelAccessStatus.Text = "Car Access granted! Gate is open.";
             labelAccessStatus.ForeColor = Color.Green;
             AlignImageToBottom();
+
         }
 
-        private void CloseGate()
+        private void CloseGateCar()
         {
-            pictureBoxGate.Image = Properties.Resources.barrierDown;
-            labelAccessStatus.Text = "Access denied! Gate is closed.";
+            pictureBoxGateCar.Image = Properties.Resources.barrierDown;
+            labelAccessStatus.Location = new Point(20, 50);
+            labelAccessStatus.Text = "Car Access denied! Gate is closed.";
             labelAccessStatus.ForeColor = Color.Red;
             AlignImageToBottom();
         }
 
-
-        private void InitializeDatabase()
+        private void CloseGateCarNice()
         {
-            sqlite_conn = new SQLiteConnection("Data Source=access_log.db; Version = 3; New = True; Compress = True;");
-            sqlite_conn.Open();
-
-            string createTableQuery = @"CREATE TABLE IF NOT EXISTS AccessLog (
-                                        Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                        PersonName TEXT,
-                                        CarNumber TEXT,
-                                        Direction TEXT,
-                                        AccessStatus TEXT,
-                                        Timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-                                    );";
-
-            SQLiteCommand createTableCmd = new SQLiteCommand(createTableQuery, sqlite_conn);
-            createTableCmd.ExecuteNonQuery();
+            labelAccessStatus.Visible = false;
+            pictureBoxGateCar.Image = Properties.Resources.barrierDown;
+            AlignImageToBottom();
         }
 
-        private void LogAccess(string personName, string carNumber, string direction, string status)
+        private void OpenGatePerson()
         {
-            string logQuery = "INSERT INTO AccessLog (PersonName, CarNumber, Direction, AccessStatus) VALUES (@PersonName, @CarNumber, @Direction, @Status)";
-            SQLiteCommand logCmd = new SQLiteCommand(logQuery, sqlite_conn);
-            logCmd.Parameters.AddWithValue("@PersonName", personName);
-            logCmd.Parameters.AddWithValue("@CarNumber", carNumber);
-            logCmd.Parameters.AddWithValue("@Direction", direction);
-            logCmd.Parameters.AddWithValue("@Status", status);
-            logCmd.ExecuteNonQuery();
+            labelAccessStatus.Visible = true;
+            pictureBoxGatePerson.Image = Properties.Resources.barrierUp;
+            labelAccessStatus.Location = new Point(450, 50);
+            labelAccessStatus.Text = "Person Access granted! Gate is open.";
+            labelAccessStatus.ForeColor = Color.Green;
+            AlignImageToBottom2();
 
-            // Cod pentru sincronizarea cu serviciul cloud
-            SyncToCloud(personName, carNumber, direction, status);
         }
 
-        private void SyncToCloud(string personName, string carNumber, string direction, string status)
+        private void CloseGatePerson()
         {
-            // Cod pentru sincronizarea datelor cu serviciul cloud
+            pictureBoxGatePerson.Image = Properties.Resources.barrierDown;
+            labelAccessStatus.Location = new Point(450, 50);
+            labelAccessStatus.Text = "Person Access denied! Gate is closed.";
+            labelAccessStatus.ForeColor = Color.Red;
+            AlignImageToBottom2();
         }
 
-        private void buttonValidateBluetooth_Click(object sender, EventArgs e)
+        private void CloseGatePersonNice()
         {
-            string employeeName = GetEmployeeNameFromBluetooth();
-            string employeeID = GetEmployeeIDFromBluetooth();
+            labelAccessStatus.Visible = false; 
+            pictureBoxGatePerson.Image = Properties.Resources.barrierDown;
+            AlignImageToBottom2();
+        }
 
-            if (!string.IsNullOrEmpty(employeeName) && !string.IsNullOrEmpty(employeeID))
+        private void AlignImageToBottom()
+        {
+            if (pictureBoxGateCar.Image != null)
             {
-                labelBluetoothInfo.Text = $"Employee data:\nName: {employeeName}\nEmployee ID: {employeeID}";
+                int pictureBoxHeight = pictureBoxGateCar.Height;
+                int imageHeight = pictureBoxGateCar.Image.Height;
 
-                bool hasAccess = CheckAccessUsingBluetoothData(employeeName, employeeID);
+                int newY = pictureBoxHeight - imageHeight;
 
-                if (hasAccess)
-                {
-                    OpenGate();
-                }
-                else
-                {
-                    CloseGate();
-                }
-            }
-            else
-            {
-                labelBluetoothInfo.Text = "Failed to retrieve employee data from Bluetooth.";
-                CloseGate();
+                pictureBoxGateCar.Padding = new Padding(0, newY, 0, 0);
+                pictureBoxGateCar.Refresh();
             }
         }
 
-        private string GetEmployeeNameFromBluetooth()
+        private void AlignImageToBottom2()
         {
-            // cod obtinere nume prin bt (lipsa)
-            return "John Doe";
+            if (pictureBoxGatePerson.Image != null)
+            {
+                int pictureBoxHeight = pictureBoxGatePerson.Height;
+                int imageHeight = pictureBoxGatePerson.Image.Height;
+
+                int newY = pictureBoxHeight - imageHeight;
+
+                pictureBoxGatePerson.Padding = new Padding(0, newY, 0, 0);
+                pictureBoxGatePerson.Refresh();
+            }
+
         }
 
-        private string GetEmployeeIDFromBluetooth()
-        {
-            // cod obtinere ID prin bt (lipsa)
-            return "EMP12345";
-        }
-
-        private bool CheckAccessUsingBluetoothData(string employeeName, string employeeID)
-        {
-            // cod pentru verificarea accesului cu datele obținute prin bt
-            return true;
-        }
     }
 }
