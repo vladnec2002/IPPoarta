@@ -19,9 +19,6 @@ namespace ProgramPoartaIP
         private SQLiteConnection sqlite_conn;
         private SerialPort serialPort;
 
-        // New label to display received data from Arduino
-        private Label labelReceivedData;
-
         public Form1()
         {
             InitializeComponent();
@@ -46,35 +43,6 @@ namespace ProgramPoartaIP
             catch (Exception ex)
             {
                 MessageBox.Show("Error opening serial port: " + ex.Message);
-            }
-
-            // Initialize and add the label to the form
-            labelReceivedData = new Label();
-            labelReceivedData.AutoSize = true;
-            labelReceivedData.Location = new Point(10, 150); // Adjust position as needed
-            labelReceivedData.Text = "Received data: ";
-            this.Controls.Add(labelReceivedData);
-        }
-
-        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
-        {
-            // This method will be called when data is received from Arduino
-            string data = serialPort.ReadLine().Trim(); // Assuming Arduino sends a line of text
-
-            // Update the label text with received data
-            UpdateReceivedDataLabel(data);
-        }
-
-        private void UpdateReceivedDataLabel(string data)
-        {
-            // Use Invoke to update UI control from non-UI thread
-            if (labelReceivedData.InvokeRequired)
-            {
-                labelReceivedData.Invoke(new MethodInvoker(delegate { UpdateReceivedDataLabel(data); }));
-            }
-            else
-            {
-                labelReceivedData.Text = "Received data: " + data;
             }
         }
 
@@ -140,25 +108,44 @@ namespace ProgramPoartaIP
             AlignImageToBottom();
         }
 
+        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        {
+            // This method will be called when data is received from Arduino
+            string data = serialPort.ReadLine().Trim(); // Assuming Arduino sends a line of text
+
+            // Update gate state based on received data
+            if (data == "1")
+            {
+                this.Invoke((MethodInvoker)delegate
+                {
+                    OpenGate();
+                });
+            }
+            else if (data == "2")
+            {
+                this.Invoke((MethodInvoker)delegate
+                {
+                    CloseGate();
+                });
+            }
+        }
+
         private void OpenGate()
         {
             pictureBoxGate.Image = Properties.Resources.barrierUp;
-            PopulatePersonDetails();
-            labelAccessStatus.Text = "Access granted! Employee has access.";
+            labelAccessStatus.Text = "Access granted! Gate is open.";
             labelAccessStatus.ForeColor = Color.Green;
             AlignImageToBottom();
-            LogAccess(personName, carNumber, direction, "granted");
         }
 
         private void CloseGate()
         {
             pictureBoxGate.Image = Properties.Resources.barrierDown;
-            HidePersonDetails();
-            labelAccessStatus.Text = "Access denied! Employee does not have access.";
+            labelAccessStatus.Text = "Access denied! Gate is closed.";
             labelAccessStatus.ForeColor = Color.Red;
             AlignImageToBottom();
-            LogAccess(personName, carNumber, direction, "denied");
         }
+
 
         private void InitializeDatabase()
         {
